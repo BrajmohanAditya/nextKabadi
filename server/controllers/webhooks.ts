@@ -20,7 +20,7 @@ export const stripeWebhook = async (request: Request, response: Response) => {
 
         // Handle the event
         switch (event.type) {
-            case "payment_intent.succeeded":
+            case "payment_intent.succeeded": {
                 const paymentIntent = event.data.object as Stripe.PaymentIntent;
                 const paymentIntentId = paymentIntent.id;
 
@@ -28,7 +28,11 @@ export const stripeWebhook = async (request: Request, response: Response) => {
                 const session = await stripe.checkout.sessions.list({
                     payment_intent: paymentIntentId,
                 });
-                const { orderId } = session.data[0].metadata as any;
+                const orderId = (session.data[0]?.metadata as any)?.orderId;
+
+                if (!orderId) {
+                    break;
+                }
 
                 // Mark Payment as Paid
                 const paidOrder = await prisma.order.update({
@@ -36,25 +40,11 @@ export const stripeWebhook = async (request: Request, response: Response) => {
                     data: { isPaid: true },
                 });
 
-                // Decrease stock
-                const orderItems = Array.isArray(paidOrder.items) ? paidOrder.items : ([] as any[]);
-
-                for (const item of orderItems) {
-                    await prisma.product.update({
-                        where: { id: item.product },
-                        data: { stock: { decrement: item.quantity } },
-                    });
-                }
-
                 if (paidOrder) {
                     await inngest.send({ name: "order/placed", data: { orderId } });
                 }
-
-                // Send stock update events for each product in the order
-                for (const item of orderItems) {
-                    await inngest.send({ name: "inventory/stock.updated", data: { productId: item.product } });
-                }
                 break;
+            }
 
             case "payment_intent.canceled":
             case "payment_intent.payment_failed": {
@@ -66,9 +56,11 @@ export const stripeWebhook = async (request: Request, response: Response) => {
                     payment_intent: paymentIntentFailureId,
                 });
 
-                const failureOrderId = (sessionFailure.data[0].metadata as any).orderId;
+                const failureOrderId = (sessionFailure.data[0]?.metadata as any)?.orderId;
 
-                await prisma.order.delete({ where: { id: failureOrderId } });
+                if (failureOrderId) {
+                    await prisma.order.delete({ where: { id: failureOrderId } });
+                }
                 break;
             }
 
