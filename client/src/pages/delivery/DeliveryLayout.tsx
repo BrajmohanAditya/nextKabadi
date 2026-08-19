@@ -10,11 +10,18 @@ export default function DeliveryLayout() {
     useEffect(() => {
         const saved = localStorage.getItem("delivery_partner");
         const token = localStorage.getItem("delivery_token");
-        if (!saved || !token) {
+        if (!saved || !token || saved === "undefined") {
             navigate("/delivery/login");
             return;
         }
-        setPartner(JSON.parse(saved));
+        try {
+            setPartner(JSON.parse(saved));
+        } catch (error) {
+            console.error("Failed to parse delivery partner:", error);
+            localStorage.removeItem("delivery_partner");
+            localStorage.removeItem("delivery_token");
+            navigate("/delivery/login");
+        }
     }, [navigate]);
 
     const handleLogout = () => {
